@@ -1,0 +1,74 @@
+[
+  {
+    "id": "SR-101",
+    "title": "Sea-View Apartment in Costa Adeje",
+    "price_eur": 285000,
+    "location": "Costa Adeje, Tenerife",
+    "bedrooms": 2,
+    "bathrooms": 2,
+    "size_m2": 78,
+    "type": "Apartment",
+    "features": ["sea view", "communal pool", "underground parking", "elevator", "furnished"],
+    "description": "Bright 2-bedroom apartment on the 6th floor with unobstructed Atlantic views. Recently renovated kitchen and bathrooms. Walking distance to the beach promenade and international schools. Ideal for holiday rental or permanent residence."
+  },
+  {
+    "id": "SR-102",
+    "title": "Rustic Finca with Avocado Grove",
+    "price_eur": 420000,
+    "location": "La Orotava, Tenerife",
+    "bedrooms": 4,
+    "bathrooms": 3,
+    "size_m2": 210,
+    "type": "Country House",
+    "features": ["private garden", "avocado grove", "mountain view", "fireplace", "guest house"],
+    "description": "Traditional Canarian finca fully restored, set on 5,000 m2 of land with a producing avocado grove. Includes a separate one-bedroom guest house. Quiet rural setting 10 minutes from the town center."
+  },
+  {
+    "id": "SR-103",
+    "title": "Modern Studio near University",
+    "price_eur": 129000,
+    "location": "La Laguna, Tenerife",
+    "bedrooms": 1,
+    "bathrooms": 1,
+    "size_m2": 42,
+    "type": "Studio",
+    "features": ["balcony", "bike storage", "energy efficient", "unfurnished"],
+    "description": "Compact and efficient studio in a new-build development, five minutes from the University of La Laguna. A/A++ energy rating keeps utility costs low. Popular with investors for student rentals."
+  },
+  {
+    "id": "SR-104",
+    "title": "Beachfront Villa with Infinity Pool",
+    "price_eur": 1250000,
+    "location": "Playa Paraiso, Tenerife",
+    "bedrooms": 5,
+    "bathrooms": 5,
+    "size_m2": 380,
+    "type": "Villa",
+    "features": ["infinity pool", "direct beach access", "home cinema", "smart home system", "staff quarters"],
+    "description": "Architect-designed villa directly on the coastline with a 15-meter infinity pool overlooking the ocean. Fully automated smart home system controls lighting, climate and security. Gated community with 24-hour security."
+  },
+  {
+    "id": "SR-105",
+    "title": "Renovated Townhouse in Historic Center",
+    "price_eur": 340000,
+    "location": "San Cristobal de La Laguna, Tenerife",
+    "bedrooms": 3,
+    "bathrooms": 2,
+    "size_m2": 150,
+    "type": "Townhouse",
+    "features": ["patio", "original wood beams", "UNESCO heritage area", "roof terrace"],
+    "description": "Beautifully renovated 18th-century townhouse in the UNESCO World Heritage center, blending original architectural details with modern comforts. Interior patio typical of Canarian colonial homes and a rooftop terrace with city views."
+  },
+  {
+    "id": "SR-106",
+    "title": "Golf-Front Duplex",
+    "price_eur": 395000,
+    "location": "Golf del Sur, Tenerife",
+    "bedrooms": 3,
+    "bathrooms": 2,
+    "size_m2": 110,
+    "type": "Duplex",
+    "features": ["golf course view", "shared pool", "terrace", "air conditioning"],
+    "description": "Two-level duplex overlooking the 4th fairway of Golf del Sur. Spacious terrace ideal for entertaining, shared community pool, and close to Reina Sofia airport. Popular with international buyers as a second home."
+  }
+]
