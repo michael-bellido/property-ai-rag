@@ -1,4 +1,4 @@
-# PropertyBot — RAG Chatbot for Real Estate
+# Property AI — RAG Chatbot for Real Estate
 
 A Retrieval-Augmented Generation (RAG) chatbot that answers questions about
 property listings and agency policies by retrieving relevant information
@@ -92,7 +92,7 @@ flowchart LR
 ## Project structure
 
 ```
-propertybot-rag/
+property-ai-rag/
 ├── app/
 │   ├── ingest.py       # builds the local vector store from data/
 │   └── app.py           # Streamlit chat UI (retrieval + LLM call)

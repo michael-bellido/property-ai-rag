@@ -1,5 +1,5 @@
 """
-PropertyBot — a Retrieval-Augmented Generation (RAG) chat assistant for a
+Property AI — a Retrieval-Augmented Generation (RAG) chat assistant for a
 fictional real-estate agency ("Sunset Realty Group").
 
 The user asks questions in natural language (e.g. "What villas do you have
@@ -32,12 +32,12 @@ load_dotenv(ROOT / ".env")
 
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 LLM_MODEL = "llama-3.1-8b-instant"
-REPO_URL = "https://github.com/michael-bellido/propertybot-rag"
+REPO_URL = "https://github.com/michael-bellido/property-ai-rag"
 
 # =========================================================
 # BILINGUAL UI TEXT (EN default / ES) — single source of truth for every
 # static string in the interface, so a stray mixed-language string can't
-# happen again. "PropertyBot" is a brand name and is deliberately identical
+# happen again. "Property AI" is a brand name and is deliberately identical
 # in both languages — never translate it.
 # =========================================================
 
@@ -45,10 +45,10 @@ DEFAULT_LANGUAGE = "en"
 
 UI_TEXT_BY_LANG = {
     "en": {
-        "app_name": "PropertyBot",
+        "app_name": "Property AI",
         "sidebar_heading": "Try asking",
         "clear_chat": "Clear chat",
-        "welcome_title": "Welcome to PropertyBot.",
+        "welcome_title": "Welcome to Property AI.",
         "welcome_subtitle": (
             "Ask about our Tenerife listings or our buying/renting process"
         ),
@@ -66,10 +66,10 @@ UI_TEXT_BY_LANG = {
         "loading_text": "Loading knowledge base…",
     },
     "es": {
-        "app_name": "PropertyBot",
+        "app_name": "Property AI",
         "sidebar_heading": "Prueba a preguntar",
         "clear_chat": "Borrar chat",
-        "welcome_title": "Bienvenido a PropertyBot.",
+        "welcome_title": "Bienvenido a Property AI.",
         "welcome_subtitle": (
             "Pregunta sobre nuestras propiedades en Tenerife o el proceso de compra/alquiler"
         ),
@@ -135,7 +135,7 @@ def get_suggestions() -> list[str]:
     return SUGGESTIONS_BY_LANG[current_lang()]
 
 
-SYSTEM_PROMPT = """You are PropertyBot, a helpful assistant for Sunset Realty Group, \
+SYSTEM_PROMPT = """You are Property AI, a helpful assistant for Sunset Realty Group, \
 a fictional real-estate agency in Tenerife. Answer the user's question using ONLY \
 the context provided below (property listings and FAQ). If the answer is not in \
 the context, say you don't have that information and suggest contacting the agency \
@@ -177,7 +177,7 @@ body {
     background-color: #000000;
     border-right: 1px solid #2a2a2a;
 }
-/* "PropertyBot" lives in the sidebar's real header, next to the built-in
+/* "Property AI" lives in the sidebar's real header, next to the built-in
    collapse arrow, instead of as a separate title element pushed down with
    manual margins. */
 [data-testid="stSidebarHeader"] {
@@ -187,7 +187,7 @@ body {
     align-items: center !important;
 }
 [data-testid="stSidebarHeader"]::before {
-    content: "PropertyBot";
+    content: "Property AI";
     margin-right: auto;
     color: #ffffff;
     font-size: 20px;
@@ -759,7 +759,7 @@ def render_sidebar():
         # UI_TEXT_BY_LANG / SUGGESTIONS_BY_LANG) switches with it. The
         # assistant's own answers stay in English regardless (see
         # SYSTEM_PROMPT), so this only affects "what you see", not
-        # "what the bot writes back". "PropertyBot" itself never translates.
+        # "what the bot writes back". "Property AI" itself never translates.
         lang = current_lang()
         col_en, col_es = st.columns(2)
         with col_en:
@@ -910,7 +910,7 @@ def handle_question(prompt, vector_store, llm):
 
 
 def main():
-    st.set_page_config(page_title="PropertyBot — Sunset Realty Group", layout="wide")
+    st.set_page_config(page_title="Property AI — Sunset Realty Group", layout="wide")
     st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
     render_sidebar()
