@@ -27,11 +27,6 @@ jobs:
       - name: Run tests
         run: pytest -v
 
-      # Informational only — never fails the build. The goal is a signal
-      # that lint checks exist, not to block CI on every pre-existing
-      # style nit; make it required once the codebase's lint baseline is
-      # clean.
-      - name: Lint with ruff (non-blocking)
-        continue-on-error: true
+      - name: Lint with ruff
         run: ruff check app tests
 

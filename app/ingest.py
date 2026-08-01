@@ -7,7 +7,6 @@ Run once before starting the app:
     python app/ingest.py
 """
 import json
-import os
 from pathlib import Path
 
 from langchain.text_splitter import RecursiveCharacterTextSplitter
