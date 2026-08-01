@@ -1,6 +1,7 @@
 # Property AI — RAG Chatbot for Real Estate
 
 [![CI](https://github.com/michael-bellido/property-ai-rag/actions/workflows/ci.yml/badge.svg)](https://github.com/michael-bellido/property-ai-rag/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A Retrieval-Augmented Generation (RAG) chatbot that answers questions about
 property listings and agency policies by retrieving relevant information
@@ -121,7 +122,7 @@ Every push to `main` and every pull request runs this same suite via
 property-ai-rag/
 ├── .github/
 │   └── workflows/
-│       └── ci.yml        # runs pytest (+ ruff, non-blocking) on every push
+│       └── ci.yml        # runs pytest + ruff on every push
 ├── app/
 │   ├── ingest.py          # builds the local vector store from data/
 │   └── app.py             # Streamlit chat UI (retrieval + LLM call)
@@ -139,6 +140,7 @@ property-ai-rag/
 ├── pytest.ini
 ├── pyproject.toml         # ruff config
 ├── .env.example
+├── LICENSE
 └── .gitignore
 ```
 
@@ -154,3 +156,7 @@ property-ai-rag/
 This is a portfolio/demo project. The listings, prices, and FAQ content are
 synthetic and created solely to illustrate the RAG pattern. Any resemblance
 to real properties or agencies is coincidental.
+
+## License
+
+[MIT](LICENSE) — free to use, modify, and learn from.
