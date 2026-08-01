@@ -1,0 +1,6 @@
+[tool.ruff]
+line-length = 100
+# The app deliberately still runs on Python 3.9 (see app.py's
+# width="stretch"/height="content" feature-detection comment), so lint
+# suggestions are scoped to what's valid there too.
+target-version = "py39"

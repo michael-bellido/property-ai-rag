@@ -15,8 +15,11 @@ Run:
 Requires a GROQ_API_KEY environment variable (see .env.example).
 """
 import html
+import inspect
 import os
+import re
 from pathlib import Path
+from typing import Optional
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -33,6 +36,13 @@ load_dotenv(ROOT / ".env")
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 LLM_MODEL = "llama-3.1-8b-instant"
 REPO_URL = "https://github.com/michael-bellido/property-ai-rag"
+
+# How many prior user+assistant exchanges get sent back to the LLM as
+# conversation history for follow-up questions ("what about cheaper ones?").
+# Kept small on purpose: LLM_MODEL is a free-tier 8B model, so an unbounded
+# chat history would both slow it down and dilute the system prompt's
+# grounding instructions the longer a conversation runs.
+MAX_HISTORY_TURNS = 3
 
 # =========================================================
 # BILINGUAL UI TEXT (EN default / ES) — single source of truth for every
@@ -143,14 +153,91 @@ directly — do not make up prices, listings, or policies. Keep answers concise 
 mention specific listing IDs when relevant.
 
 Language requirements:
-- Always respond in English, even if the user writes in Spanish or another language.
-- Translate any Spanish-language context into natural English in your answer.
-- Never mix English and Spanish in the same response.
+{language_directive}
+- Never mix two languages within the same response.
 - Property, street, and place names may stay in their original form.
 
 Context:
 {context}
 """
+
+# The model (llama-3.1-8b-instant) is small enough that a generic "reply in
+# the user's language" instruction is not reliably followed — it would
+# sometimes answer in Spanish even for a clearly English question. Instead
+# of trusting the LLM's own language detection, detect the question's
+# language in Python and inject an explicit, unambiguous directive naming
+# that language for THIS specific question. This only ever decides which
+# language the ANSWER is written in — it has nothing to do with the EN/ES
+# interface-text toggle (current_lang() / t()), which is left untouched.
+#
+# Deliberately dependency-free (no langdetect/etc — nothing new to
+# pip install): the UI itself only ever offers English or Spanish, so a
+# small curated stopword/character heuristic is enough to tell the two
+# apart reliably for short real-estate questions.
+_SPANISH_SIGNAL_CHARS = set("ñáéíóúü¿¡")
+_SPANISH_STOPWORDS = {
+    "el", "la", "los", "las", "un", "una", "unos", "unas", "de", "del", "que",
+    "y", "en", "es", "son", "por", "para", "con", "sin", "no", "sí", "se",
+    "su", "sus", "mi", "mis", "tu", "tus", "como", "cómo", "qué", "cual",
+    "cuál", "cuáles", "cuanto", "cuánto", "cuánta", "cuántos", "cuántas",
+    "donde", "dónde", "cuando", "cuándo", "puedo", "podría", "quiero",
+    "quisiera", "necesito", "hola", "gracias", "buenas", "buenos", "días",
+    "dias", "tardes", "noches", "propiedad", "propiedades", "comprar",
+    "vender", "alquilar", "alquiler", "residente", "residentes", "vivienda",
+    "casa", "piso", "está", "esta", "estoy", "tengo", "hay", "más", "mas",
+    "también", "tambien", "usted", "ustedes", "vosotros", "nosotros", "si",
+    "extranjero", "extranjeros", "impuestos", "hipoteca",
+}
+_ENGLISH_STOPWORDS = {
+    "the", "a", "an", "is", "are", "of", "to", "and", "in", "on", "for",
+    "with", "without", "not", "it", "this", "that", "how", "what", "which",
+    "where", "when", "can", "could", "would", "should", "i", "you", "we",
+    "they", "my", "your", "buy", "buying", "sell", "selling", "rent",
+    "renting", "resident", "residents", "non-resident", "property",
+    "properties", "house", "apartment", "please", "thanks", "thank",
+    "hello", "hi", "need", "want", "do", "does", "did", "as", "if",
+    "foreigner", "foreigners", "taxes", "mortgage",
+}
+
+
+def guess_question_language(text: str) -> Optional[str]:
+    """Best-effort EN/ES guess for the user's raw question text. Returns
+    "English", "Spanish", or None when it genuinely can't tell (very
+    short/ambiguous input like "ok" or "gracias" alone won't misfire —
+    those fall back to a generic same-language instruction instead)."""
+    if not text or not text.strip():
+        return None
+    lowered = text.lower()
+    if any(ch in _SPANISH_SIGNAL_CHARS for ch in lowered):
+        return "Spanish"
+    words = re.findall(r"[a-zà-ÿ]+", lowered)
+    if not words:
+        return None
+    es_hits = sum(1 for w in words if w in _SPANISH_STOPWORDS)
+    en_hits = sum(1 for w in words if w in _ENGLISH_STOPWORDS)
+    if es_hits == en_hits:
+        return None
+    return "Spanish" if es_hits > en_hits else "English"
+
+
+def build_language_directive(question: str) -> str:
+    """Return an explicit, question-specific instruction telling the LLM
+    which language to answer in, based on the user's own raw question text
+    (not the UI language toggle)."""
+    lang_name = guess_question_language(question)
+    if lang_name:
+        return (
+            f"- The user's question is written in {lang_name}. You MUST write your "
+            f"ENTIRE answer in {lang_name} — do not answer in English or any other "
+            f"language unless {lang_name} IS English. The context below is always in "
+            f"English; translate it naturally into {lang_name} as needed."
+        )
+    # Undetectable input — fall back to a generic same-language instruction
+    # instead of guessing wrong.
+    return (
+        "- Answer in the same language the user used to ask their question. "
+        "The context below is in English; translate it naturally as needed."
+    )
 
 CUSTOM_CSS = """
 <style>
@@ -160,14 +247,17 @@ html, body, [class*="css"]  {
     font-family: 'Inter', sans-serif;
 }
 
-/* Page background: pure black — including the bottom-pinned input bar */
+/* Page background: pure black. The bottom-pinned bar that hosts the chat
+   input is deliberately NOT targeted here (no stBottom/stBottomBlockContainer
+   selector) — it has no background rule of its own, so it stays transparent
+   and simply shows this black page background through. Keeping the chat
+   input's containing bar completely unstyled avoids re-introducing an
+   extra background layer behind the native widget. */
 [data-testid="stAppViewContainer"] > .main {
     background: #000000;
 }
 [data-testid="stAppViewContainer"],
 [data-testid="stHeader"],
-[data-testid="stBottom"],
-[data-testid="stBottomBlockContainer"],
 body {
     background-color: #000000 !important;
 }
@@ -406,158 +496,12 @@ button:active {
     font-size: 0.92rem;
 }
 
-/* Chat input — the width fix targets Streamlit's own full-width bottom
-   container (stBottom) and its direct child wrapper, not stChatInput
-   itself: stChatInput always stretches to fill its parent, so narrowing
-   stChatInput alone left the *container* full-width and the input just
-   sat off-center inside it. Narrowing the container is what actually works. */
-
-/* Full-width bottom container: make it a flex row so its child can be
-   centered inside it */
-div[data-testid="stBottom"] {
-    left: 0 !important;
-    right: 0 !important;
-    width: 100% !important;
-    display: flex !important;
-    justify-content: center !important;
-    align-items: flex-end !important;
-    background: transparent !important;
-    padding: 0 !important;
-}
-/* The direct child wrapper — this is what gets sized and centered */
-div[data-testid="stBottom"] > div {
-    width: 60vw !important;
-    max-width: 820px !important;
-    min-width: 0 !important;
-    margin: 0 0 22px 0 !important;
-    padding: 0 !important;
-}
-/* The input itself just fills that sized wrapper */
-div[data-testid="stBottom"] div[data-testid="stChatInput"] {
-    width: 100% !important;
-    max-width: 100% !important;
-    margin: 0 !important;
-    background: transparent !important;
-}
-@media (max-width: 800px) {
-    div[data-testid="stBottom"] > div {
-        width: calc(100vw - 32px) !important;
-        max-width: none !important;
-    }
-}
-/* ===== MAIN CONTAINER =====
-   Compact start, grows upward as the user types, caps out around 5-6
-   lines, then scrolls internally. Single background + single border on
-   the outer container only — no more double pill/inner-div layering. */
-div[data-testid="stChatInput"] {
-    position: relative !important;
-    min-height: 56px !important;
-    max-height: 190px !important;
-    padding: 0 !important;
-    overflow: hidden !important;
-    background: #212121 !important;
-    border: 1px solid #3f3f46 !important;
-    border-radius: 28px !important;
-    box-shadow: none !important;
-}
-/* Strip Streamlit's own internal borders/backgrounds so only the outer
-   container above shows */
-div[data-testid="stChatInput"] [data-baseweb="textarea"],
-div[data-testid="stChatInput"] [data-baseweb="textarea"] > div {
-    background: transparent !important;
-    border: none !important;
-    border-radius: 0 !important;
-    box-shadow: none !important;
-}
-div[data-testid="stChatInput"]:focus-within {
-    border-color: #4CAF6D !important;
-    box-shadow: none !important;
-}
-
-/* ===== TEXT ===== */
-textarea[data-testid="stChatInputTextArea"],
-textarea[data-testid="stChatInput"],
-div[data-testid="stChatInput"] textarea {
-    min-height: 56px !important;
-    max-height: 170px !important;
-    box-sizing: border-box !important;
-    resize: none !important;
-    overflow-y: auto !important;
-    background: transparent !important;
-    color: #f4f4f4 !important;
-    border: none !important;
-    outline: none !important;
-    box-shadow: none !important;
-    font-size: 16px !important;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
-    line-height: 24px !important;
-    /* room for the text on the left and the send button on the right */
-    padding: 16px 64px 16px 20px !important;
-    margin: 0 !important;
-    scrollbar-width: thin;
-    scrollbar-color: #565656 transparent;
-}
-div[data-testid="stChatInput"] textarea::placeholder {
-    color: #8e8e9f !important;
-    opacity: 1 !important;
-}
-
-/* ===== SEND BUTTON — pinned to the bottom-right corner ===== */
-div[data-testid="stChatInput"] button {
-    position: absolute !important;
-    right: 10px !important;
-    bottom: 10px !important;
-    width: 36px !important;
-    min-width: 36px !important;
-    height: 36px !important;
-    min-height: 36px !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    border: none !important;
-    border-radius: 50% !important;
-    background: #ffffff !important;
-    color: #000000 !important;
-    box-shadow: none !important;
-    z-index: 10 !important;
-}
-div[data-testid="stChatInput"] button:hover {
-    background: #e8e8e8 !important;
-}
-div[data-testid="stChatInput"] button:disabled {
-    background: #3a3a3a !important;
-    color: #8b8b8b !important;
-    opacity: 1 !important;
-}
-div[data-testid="stChatInput"] button svg {
-    width: 21px !important;
-    height: 21px !important;
-    color: inherit !important;
-    fill: currentColor !important;
-}
-
-/* ===== HIDE THE 0/1500 CHARACTER COUNTER ===== */
-div[data-testid="stChatInput"] [data-testid="stTextAreaCharacterCount"],
-div[data-testid="stChatInput"] [aria-live="polite"],
-div[data-testid="stChatInput"] small {
-    display: none !important;
-}
-
-/* ===== INNER SCROLLBAR ===== */
-div[data-testid="stChatInput"] textarea::-webkit-scrollbar {
-    width: 6px;
-}
-div[data-testid="stChatInput"] textarea::-webkit-scrollbar-track {
-    background: transparent;
-    margin-top: 18px;
-    margin-bottom: 18px;
-}
-div[data-testid="stChatInput"] textarea::-webkit-scrollbar-thumb {
-    background: #565656;
-    border-radius: 999px;
-}
+/* Chat input: no CSS for it lives in this stylesheet at all. The only
+   customization left is centering + max-width on `.st-key-property_chat`
+   (MINIMAL_CHAT_INPUT_CSS below, injected via st.html() right before
+   st.chat_input() in main()); shape, color, and focus border come from
+   .streamlit/config.toml's [theme] instead. Do not add stBottom /
+   stChatInput / [data-baseweb=...] / textarea / button rules here. */
 
 /* Professional branded loading screen */
 .pb-loading-wrap {
@@ -592,41 +536,6 @@ div[data-testid="stChatInput"] textarea::-webkit-scrollbar-thumb {
     color: #8a8a8a;
     font-size: 0.82rem;
     letter-spacing: 0.01em;
-}
-
-/* ===== Chat input accent — white, not green (overrides earlier rules;
-   kept last in the stylesheet so it wins on specificity ties) ===== */
-div[data-testid="stChatInput"] {
-    border: 1px solid #FFFFFF !important;
-    box-shadow: none !important;
-}
-div[data-testid="stChatInput"]:focus-within {
-    border-color: #FFFFFF !important;
-    outline: none !important;
-    box-shadow: none !important;
-}
-div[data-testid="stChatInput"] [data-baseweb="textarea"],
-div[data-testid="stChatInput"] [data-baseweb="textarea"] > div,
-div[data-testid="stChatInput"] textarea {
-    border-color: transparent !important;
-    outline: none !important;
-    box-shadow: none !important;
-}
-div[data-testid="stChatInput"] textarea {
-    caret-color: #FFFFFF !important;
-}
-div[data-testid="stChatInput"] button:not(:disabled) {
-    background: #FFFFFF !important;
-    color: #000000 !important;
-    border: none !important;
-}
-div[data-testid="stChatInput"] button:not(:disabled):hover {
-    background: #E8E8E8 !important;
-}
-div[data-testid="stChatInput"] button:disabled {
-    background: #3A3A3A !important;
-    color: #A1A1A1 !important;
-    border: none !important;
 }
 
 /* "Sources used" expander — st.expander instead of st.popover, since a
@@ -675,6 +584,27 @@ div[data-testid="stChatMessage"] div[data-testid="stExpander"] details > div {
 }
 div[data-testid="stChatMessage"] div[data-testid="stExpander"] hr {
     border-color: #2f2f2f !important;
+}
+</style>
+"""
+
+# Chat input: no more custom CSS on Streamlit's internal wrappers
+# (stBottom, stChatInput, BaseWeb's [data-baseweb="textarea"]/
+# [data-baseweb="base-input"], the raw textarea, the send button). All of
+# that was fragile — every internal Streamlit/BaseWeb layer that got a
+# patch could shift and break another layer. Sizing/growth/shape now come
+# from the native widget itself (width="stretch", height="content" on
+# st.chat_input — see main()), and the ONLY customization left is
+# centering + max-width on the stable `.st-key-property_chat` wrapper
+# that Streamlit generates from the widget's own `key`. Everything else
+# (surface color, border radius, focus border color) comes from
+# .streamlit/config.toml's [theme] block instead of CSS.
+MINIMAL_CHAT_INPUT_CSS = """
+<style>
+/* Única personalización permitida para el chat input */
+.st-key-property_chat {
+    width: min(760px, calc(100vw - 32px)) !important;
+    margin-inline: auto !important;
 }
 </style>
 """
@@ -734,6 +664,89 @@ def retrieve_context(vector_store, query: str, k: int = 4) -> tuple[str, list[di
     return context, _build_sources(results)
 
 
+# =========================================================
+# CONVERSATION MEMORY
+# Two separate concerns, both bounded to the last MAX_HISTORY_TURNS
+# exchanges from st.session_state.messages:
+#   1. Retrieval needs a STANDALONE query. A bare follow-up like "what
+#      about cheaper ones?" embeds poorly on its own — condense_follow_up_
+#      question() asks the LLM to rewrite it into something like "What
+#      cheaper villas do you have?" using the recent conversation, and
+#      THAT rewritten query is what actually gets vector-searched.
+#   2. Answer generation needs the conversation itself, so the model can
+#      refer back to what was already discussed — _bounded_conversation_
+#      messages() turns recent history into the (role, content) tuples
+#      that get prepended to the current question in the LLM call.
+# Neither of these touches the language-detection logic (still based on
+# the raw current question) or the UI language toggle.
+# =========================================================
+
+CONDENSE_QUESTION_PROMPT = """Rewrite the follow-up question below into a standalone \
+question that includes any context it depends on from the conversation so far \
+(for example: the property type, price range, location, or topic being discussed). \
+Keep the rewritten question in the SAME language as the follow-up question. If the \
+follow-up question is already standalone and doesn't depend on the conversation, \
+return it unchanged. Respond with ONLY the rewritten question — no explanation, no \
+quotation marks, no extra text.
+
+Conversation so far:
+{history}
+
+Follow-up question: {question}
+
+Standalone question:"""
+
+
+def _format_history_for_condensing(history: list[dict], limit_turns: int = 2) -> str:
+    """Compact "Speaker: text" rendering of the last few turns, used only
+    to help the LLM rewrite a follow-up question — never shown to the
+    user. Each turn is truncated so one long previous answer can't crowd
+    out this otherwise-small prompt."""
+    recent = history[-(limit_turns * 2):]
+    lines = []
+    for turn in recent:
+        content = " ".join((turn.get("content") or "").split())
+        if not content:
+            continue
+        if len(content) > 300:
+            content = content[:297].rstrip() + "..."
+        speaker = "User" if turn.get("role") == "user" else "Assistant"
+        lines.append(f"{speaker}: {content}")
+    return "\n".join(lines)
+
+
+def condense_follow_up_question(llm, history: list[dict], question: str) -> str:
+    """Rewrite a short follow-up question into a standalone one so vector
+    retrieval can actually find relevant chunks for it. Falls back to the
+    original question — for both an empty history and any LLM failure —
+    since retrieval on the raw follow-up is still better than crashing."""
+    if not history:
+        return question
+    history_text = _format_history_for_condensing(history)
+    if not history_text:
+        return question
+    try:
+        response = llm.invoke(
+            CONDENSE_QUESTION_PROMPT.format(history=history_text, question=question)
+        )
+        standalone = (response.content or "").strip().strip('"')
+        return standalone or question
+    except Exception:
+        return question
+
+
+def _bounded_conversation_messages(history: list[dict]) -> list[tuple[str, str]]:
+    """Turn the last MAX_HISTORY_TURNS exchanges into (role, content)
+    tuples for the LLM message list, so the model can answer follow-up
+    questions with awareness of what was already discussed."""
+    recent = history[-(MAX_HISTORY_TURNS * 2):]
+    return [
+        ("human" if turn.get("role") == "user" else "assistant", turn.get("content") or "")
+        for turn in recent
+        if turn.get("content")
+    ]
+
+
 def render_sources_expander(sources: list[dict]):
     with st.expander(f"{t('sources')} · {len(sources)}", expanded=False):
         for index, source in enumerate(sources, start=1):
@@ -755,11 +768,12 @@ def render_sources_expander(sources: list[dict]):
 
 def render_sidebar():
     with st.sidebar:
-        # Language selector — only the interface text (this file's
-        # UI_TEXT_BY_LANG / SUGGESTIONS_BY_LANG) switches with it. The
-        # assistant's own answers stay in English regardless (see
-        # SYSTEM_PROMPT), so this only affects "what you see", not
-        # "what the bot writes back". "Property AI" itself never translates.
+        # Language selector — switches the interface text (this file's
+        # UI_TEXT_BY_LANG / SUGGESTIONS_BY_LANG). It does NOT control the
+        # assistant's answer language: the assistant now replies in
+        # whatever language the user actually typed their question in,
+        # independent of this toggle (see SYSTEM_PROMPT's "Language
+        # requirements"). "Property AI" itself never translates.
         lang = current_lang()
         col_en, col_es = st.columns(2)
         with col_en:
@@ -881,6 +895,11 @@ def render_bubble(text: str, role: str = "assistant"):
 
 
 def handle_question(prompt, vector_store, llm):
+    # Snapshot prior turns BEFORE appending the current question, so the
+    # conversation-memory helpers below see only what was already
+    # discussed, not this new question appearing twice.
+    prior_history = list(st.session_state.messages)
+
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         render_bubble(prompt, "user")
@@ -894,9 +913,20 @@ def handle_question(prompt, vector_store, llm):
             )
             context, sources = retrieve_context(vector_store, prompt)
         else:
-            context, sources = retrieve_context(vector_store, prompt)
+            # A bare follow-up ("what about cheaper ones?") retrieves badly
+            # on its own — condense it into a standalone query first, using
+            # the recent conversation for anything it depends on.
+            search_query = condense_follow_up_question(llm, prior_history, prompt)
+            context, sources = retrieve_context(vector_store, search_query)
             messages = [
-                ("system", SYSTEM_PROMPT.format(context=context)),
+                (
+                    "system",
+                    SYSTEM_PROMPT.format(
+                        context=context,
+                        language_directive=build_language_directive(prompt),
+                    ),
+                ),
+                *_bounded_conversation_messages(prior_history),
                 ("human", prompt),
             ]
             with st.spinner(t("thinking")):
@@ -965,14 +995,33 @@ def main():
         unsafe_allow_html=True,
     )
     # Must stay at the top level of main() — not inside a container, column,
-    # tab, or sidebar — so Streamlit pins it to the bottom on its own. Width
-    # and centering are handled purely via CSS on [data-testid="stChatInput"]
-    # (see CUSTOM_CSS above).
-    if prompt := st.chat_input(
-        t("chat_placeholder"),
-        key="property_chat",
-        max_chars=1500,
-    ):
+    # tab, or sidebar — so Streamlit pins it to the bottom on its own.
+    #
+    # `width="stretch"` / `height="content"` let the native widget handle
+    # sizing and auto-growth itself (no more hand-patched min/max-height on
+    # an internal textarea), but both parameters only exist on Streamlit
+    # >=1.56.0. Rather than hard-requiring that version, detect support at
+    # runtime via inspect.signature and only pass what the installed
+    # st.chat_input actually accepts — this way the app works whether the
+    # environment has been upgraded yet or not, instead of crashing with a
+    # TypeError on older installs. Check the installed version/signature
+    # with: python -c "import streamlit as st, inspect; print(st.__version__); print(inspect.signature(st.chat_input))"
+    #
+    # The only remaining CSS (MINIMAL_CHAT_INPUT_CSS above) just centers
+    # and caps the width of the stable `.st-key-property_chat` wrapper;
+    # it never touches stBottom, stChatInput, BaseWeb internals, the
+    # textarea, or the button.
+    st.html(MINIMAL_CHAT_INPUT_CSS)
+    chat_input_kwargs = {
+        "key": "property_chat",
+        "max_chars": 1500,
+    }
+    supported_params = inspect.signature(st.chat_input).parameters
+    if "width" in supported_params:
+        chat_input_kwargs["width"] = "stretch"
+    if "height" in supported_params:
+        chat_input_kwargs["height"] = "content"
+    if prompt := st.chat_input(t("chat_placeholder"), **chat_input_kwargs):
         handle_question(prompt, vector_store, llm)
 
 

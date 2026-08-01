@@ -1,5 +1,7 @@
 # Property AI — RAG Chatbot for Real Estate
 
+[![CI](https://github.com/michael-bellido/property-ai-rag/actions/workflows/ci.yml/badge.svg)](https://github.com/michael-bellido/property-ai-rag/actions/workflows/ci.yml)
+
 A Retrieval-Augmented Generation (RAG) chatbot that answers questions about
 property listings and agency policies by retrieving relevant information
 from a local knowledge base before generating a response — instead of
@@ -49,6 +51,14 @@ flowchart LR
    chunks from Chroma, and sends them as context to an LLM (Groq's free-tier
    API, model `llama-3.1-8b-instant`) so the answer is grounded in the
    retrieved data rather than the model's own guesses.
+3. **Conversation memory**: a bare follow-up like *"what about cheaper
+   ones?"* embeds poorly on its own, so before retrieval the app asks the
+   LLM to rewrite it into a standalone query (e.g. *"What cheaper villas do
+   you have?"*) using the last few turns of the conversation. That
+   standalone query is what actually gets vector-searched; the recent
+   conversation itself is also replayed to the LLM when generating the
+   answer, so multi-turn conversations stay coherent without re-stating
+   context every time.
 
 ## Tech stack
 
@@ -89,17 +99,45 @@ flowchart LR
    streamlit run app/app.py
    ```
 
+## Tests
+
+Unit tests cover the parts of the pipeline that don't require an LLM call
+or a downloaded embedding model — the EN/ES question-language heuristic,
+the conversation-memory helpers (follow-up condensation, history bounding),
+source-citation formatting, and the ingestion pipeline's document-building
+functions. They run in a couple of seconds and need no `GROQ_API_KEY`.
+
+```bash
+pip install -r requirements-dev.txt
+pytest -v
+```
+
+Every push to `main` and every pull request runs this same suite via
+[GitHub Actions](.github/workflows/ci.yml) — see the badge above.
+
 ## Project structure
 
 ```
 property-ai-rag/
+├── .github/
+│   └── workflows/
+│       └── ci.yml        # runs pytest (+ ruff, non-blocking) on every push
 ├── app/
-│   ├── ingest.py       # builds the local vector store from data/
-│   └── app.py           # Streamlit chat UI (retrieval + LLM call)
+│   ├── ingest.py          # builds the local vector store from data/
+│   └── app.py             # Streamlit chat UI (retrieval + LLM call)
 ├── data/
-│   ├── listings.json    # fictional property listings
-│   └── agency_faq.md     # fictional agency FAQ
+│   ├── listings.json      # fictional property listings
+│   └── agency_faq.md      # fictional agency FAQ
+├── tests/
+│   ├── conftest.py
+│   ├── test_ingest.py
+│   ├── test_language_detection.py
+│   ├── test_conversation_memory.py
+│   └── test_sources.py
 ├── requirements.txt
+├── requirements-dev.txt   # requirements.txt + pytest/ruff, for local dev & CI
+├── pytest.ini
+├── pyproject.toml         # ruff config
 ├── .env.example
 └── .gitignore
 ```
@@ -107,9 +145,9 @@ property-ai-rag/
 ## Possible extensions
 
 - Swap Chroma for a hosted vector DB (e.g. Pinecone, Qdrant) for a production deployment.
-- Add conversation memory so follow-up questions ("what about cheaper ones?") use prior turns.
 - Add source citations with clickable listing links.
 - Deploy on Streamlit Community Cloud or a small VPS for a live demo link.
+- Add an automated evaluation script that checks answers stay grounded in the retrieved context.
 
 ## Disclaimer
 
