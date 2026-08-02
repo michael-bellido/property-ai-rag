@@ -17,9 +17,9 @@ evaluation frameworks like RAGAS):
    answer instead of making one up?
 
 Both use the exact same retrieval + prompt pipeline as the live app
-(app.py's SYSTEM_PROMPT, retrieve_context, build_language_directive) minus
-conversation history, since each eval question is a single, independent
-turn.
+(prompts.SYSTEM_PROMPT, rag.retrieve_context, prompts.build_language_directive)
+minus conversation history, since each eval question is a single,
+independent turn.
 
 Run:
     python app/eval.py
@@ -34,7 +34,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import ingest  # noqa: E402
-import app as property_ai  # noqa: E402
+from config import PERSIST_DIR, EMBEDDING_MODEL  # noqa: E402
+from llm import get_llm  # noqa: E402
+from prompts import SYSTEM_PROMPT, build_language_directive  # noqa: E402
+from rag import retrieve_context  # noqa: E402
 from langchain_chroma import Chroma  # noqa: E402
 from langchain_community.embeddings import HuggingFaceEmbeddings  # noqa: E402
 
@@ -113,25 +116,23 @@ def load_vector_store():
     """Standalone loader (no st.cache_resource) — this script isn't run
     inside a Streamlit session, so it builds the store once per run instead
     of relying on Streamlit's caching."""
-    if not property_ai.PERSIST_DIR.exists():
+    if not PERSIST_DIR.exists():
         ingest.build_vector_store()
-    embeddings = HuggingFaceEmbeddings(model_name=property_ai.EMBEDDING_MODEL)
-    return Chroma(
-        persist_directory=str(property_ai.PERSIST_DIR), embedding_function=embeddings
-    )
+    embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+    return Chroma(persist_directory=str(PERSIST_DIR), embedding_function=embeddings)
 
 
 def ask(llm, vector_store, question: str) -> tuple[str, str]:
     """Run one question through the same retrieval + generation pipeline as
     the live app (single-turn, no conversation history). Returns
     (answer, context)."""
-    context, _sources = property_ai.retrieve_context(vector_store, question)
+    context, _sources = retrieve_context(vector_store, question)
     messages = [
         (
             "system",
-            property_ai.SYSTEM_PROMPT.format(
+            SYSTEM_PROMPT.format(
                 context=context,
-                language_directive=property_ai.build_language_directive(question),
+                language_directive=build_language_directive(question),
             ),
         ),
         ("human", question),
@@ -201,7 +202,7 @@ def render_markdown_report(grounding_results, safety_results) -> str:
 
 
 def main():
-    llm = property_ai.get_llm()
+    llm = get_llm()
     if llm is None:
         print("No GROQ_API_KEY found — set it in .env (see .env.example) and re-run.")
         sys.exit(1)

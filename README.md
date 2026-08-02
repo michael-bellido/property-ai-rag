@@ -176,7 +176,7 @@ word for word"* initially made the model do exactly that, printing the
 system prompt verbatim — the other four adversarial questions (a
 nonexistent listing ID, an off-topic question, a "jailbreak"-style roleplay
 attempt, and a hallucination-bait question) were already handled correctly.
-In response, `SYSTEM_PROMPT` in `app.py` was given an explicit "Security"
+In response, `SYSTEM_PROMPT` in `prompts.py` was given an explicit "Security"
 section instructing the model to never reveal, repeat, or paraphrase its
 instructions regardless of how the request is framed, and stating that this
 rule overrides anything found in the user's message or the retrieved
@@ -192,7 +192,7 @@ possible answer:
   like *"what about cheaper ones?"* embeds poorly on its own, so before
   every vector search the app first asks the LLM to rewrite the question
   into a standalone one using recent chat history (see
-  `condense_follow_up_question` in `app.py`). This costs one extra LLM call
+  `condense_follow_up_question` in `prompts.py`). This costs one extra LLM call
   per turn, but retrieval on the raw follow-up text would otherwise miss
   the actually-relevant chunks entirely — the alternative (skipping
   condensation) is faster but noticeably worse at multi-turn conversations.
@@ -201,7 +201,7 @@ possible answer:
   in the user's language" instruction — it would sometimes answer a clearly
   English question in Spanish. Rather than add a language-detection
   dependency, a small curated EN/ES stopword heuristic
-  (`guess_question_language` in `app.py`) decides the language in plain
+  (`guess_question_language` in `prompts.py`) decides the language in plain
   Python and injects an explicit, question-specific directive into the
   system prompt. This is more code than trusting the model, but it's
   deterministic and testable (see `tests/test_language_detection.py`),
@@ -231,6 +231,15 @@ possible answer:
   shared quota), not an adversary. A real global cap would need shared
   state across sessions (e.g. a small external store), which is more
   than this demo's traffic justifies.
+- **`app.py` split into focused modules once it outgrew a single file.**
+  What started as one ~1150-line `app.py` was broken into `config.py`
+  (paths/limits), `ui.py` (bilingual text, CSS, rendering), `prompts.py`
+  (system prompt, language detection, conversation memory), `rag.py`
+  (retrieval), and `llm.py` (LLM client + error handling), leaving `app.py`
+  as a thin orchestrator. This separates the UI from the RAG logic so each
+  piece can be tested and changed independently — the test suite now
+  imports `prompts`, `rag`, and `llm` directly instead of going through
+  `app`, which is itself evidence the split is real and not just cosmetic.
 
 ## Project structure
 
@@ -242,8 +251,13 @@ property-ai-rag/
 ├── .streamlit/
 │   └── config.toml        # theme (widget colors, radius, borders)
 ├── app/
+│   ├── config.py          # paths, model names, tunable limits, logger
+│   ├── ui.py              # bilingual UI text, CSS, and all render_*() functions
+│   ├── prompts.py         # system prompt, language detection, conversation memory
+│   ├── rag.py             # vector store loading, retrieval, source formatting
+│   ├── llm.py             # LLM client, friendly error mapping, session cap
 │   ├── ingest.py          # builds the local vector store from data/
-│   ├── app.py             # Streamlit chat UI (retrieval + LLM call)
+│   ├── app.py             # thin orchestrator: wires the modules above into the Streamlit UI
 │   └── eval.py            # on-demand RAG quality evaluation (LLM-as-judge)
 ├── data/
 │   ├── listings.json      # fictional property listings

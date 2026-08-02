@@ -1,11 +1,12 @@
 """Pytest configuration shared by every test module.
 
-app/app.py and app/ingest.py aren't packaged (no app/__init__.py, no
-pyproject.toml entry point) — they're run directly, the same way the app
+Everything under app/ (app.py, ingest.py, and the config/ui/prompts/rag/
+llm modules app.py is composed from) isn't packaged — no app/__init__.py,
+no pyproject.toml entry point — it's run directly, the same way the app
 itself is launched (`streamlit run app/app.py`, `python app/ingest.py`).
-To import them as plain modules from tests/ without turning app/ into an
-installable package, we add app/ to sys.path here, once, before any test
-module runs.
+To import any of these as plain sibling modules from tests/ (e.g.
+`import prompts`, `import rag`) without turning app/ into an installable
+package, we add app/ to sys.path here, once, before any test module runs.
 """
 import sys
 from pathlib import Path

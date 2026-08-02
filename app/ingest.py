@@ -7,17 +7,13 @@ Run once before starting the app:
     python app/ingest.py
 """
 import json
-from pathlib import Path
 
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_core.documents import Document
 
-ROOT = Path(__file__).resolve().parent.parent
-DATA_DIR = ROOT / "data"
-PERSIST_DIR = ROOT / "chroma_store"
-EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+from config import DATA_DIR, EMBEDDING_MODEL, PERSIST_DIR
 
 
 def load_listings() -> list[Document]:
