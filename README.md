@@ -116,6 +116,68 @@ pytest -v
 Every push to `main` and every pull request runs this same suite via
 [GitHub Actions](.github/workflows/ci.yml) — see the badge above.
 
+## Evaluation
+
+Passing unit tests proves the code runs — it says nothing about whether the
+chatbot's *answers* are actually good. `app/eval.py` is a separate,
+on-demand quality harness (not run in CI, since it needs a real
+`GROQ_API_KEY` and makes live LLM calls) that checks two things with an
+LLM-as-judge, the same pattern used by RAG evaluation frameworks like
+RAGAS:
+
+- **Groundedness** — for 8 normal questions with known-correct facts in
+  `data/listings.json` / `data/agency_faq.md`, is every price, listing ID,
+  fee, and timeline in the answer actually supported by the retrieved
+  context, with nothing invented?
+- **Safety / scope** — for 5 adversarial questions (prompt injection, a
+  request about a listing ID that doesn't exist, an off-topic question),
+  does the assistant refuse or say it doesn't know instead of leaking its
+  system prompt, following injected instructions, or hallucinating a
+  plausible-sounding answer?
+
+Run it yourself:
+
+```bash
+python app/eval.py
+```
+
+It prints a PASS/FAIL table with the judge's reasoning for every question
+and writes the full report to `eval_results.md`.
+
+<!-- Latest local run: paste the summary line(s) from `python app/eval.py`
+     here, e.g. "Groundedness: 8/8 passed. Safety/scope: 5/5 passed." -->
+
+## Design decisions & trade-offs
+
+A few choices in this project were deliberate trade-offs, not the only
+possible answer:
+
+- **Follow-up question condensation before retrieval.** A bare follow-up
+  like *"what about cheaper ones?"* embeds poorly on its own, so before
+  every vector search the app first asks the LLM to rewrite the question
+  into a standalone one using recent chat history (see
+  `condense_follow_up_question` in `app.py`). This costs one extra LLM call
+  per turn, but retrieval on the raw follow-up text would otherwise miss
+  the actually-relevant chunks entirely — the alternative (skipping
+  condensation) is faster but noticeably worse at multi-turn conversations.
+- **Answer language detected in Python, not left to the LLM.** The free-tier
+  model (`llama-3.1-8b-instant`) doesn't reliably follow a generic "answer
+  in the user's language" instruction — it would sometimes answer a clearly
+  English question in Spanish. Rather than add a language-detection
+  dependency, a small curated EN/ES stopword heuristic
+  (`guess_question_language` in `app.py`) decides the language in plain
+  Python and injects an explicit, question-specific directive into the
+  system prompt. This is more code than trusting the model, but it's
+  deterministic and testable (see `tests/test_language_detection.py`),
+  where "trust the LLM" wasn't.
+- **Local Chroma + local embeddings instead of a hosted vector DB.** Data
+  is small (6 listings + a short FAQ) and doesn't change often, so a local,
+  file-based Chroma store built by `sentence-transformers` embeddings keeps
+  the whole project free to run and reproducible with zero external
+  accounts beyond a Groq API key. A hosted vector DB (Pinecone, Qdrant)
+  would make more sense once the knowledge base is large or updated
+  frequently — see "Possible extensions" below.
+
 ## Project structure
 
 ```
@@ -125,7 +187,8 @@ property-ai-rag/
 │       └── ci.yml        # runs pytest + ruff on every push
 ├── app/
 │   ├── ingest.py          # builds the local vector store from data/
-│   └── app.py             # Streamlit chat UI (retrieval + LLM call)
+│   ├── app.py             # Streamlit chat UI (retrieval + LLM call)
+│   └── eval.py            # on-demand RAG quality evaluation (LLM-as-judge)
 ├── data/
 │   ├── listings.json      # fictional property listings
 │   └── agency_faq.md      # fictional agency FAQ
@@ -149,7 +212,7 @@ property-ai-rag/
 - Swap Chroma for a hosted vector DB (e.g. Pinecone, Qdrant) for a production deployment.
 - Add source citations with clickable listing links.
 - Deploy on Streamlit Community Cloud or a small VPS for a live demo link.
-- Add an automated evaluation script that checks answers stay grounded in the retrieved context.
+- Run `app/eval.py` on every model/prompt change and track scores over time instead of a single point-in-time run.
 
 ## Disclaimer
 
