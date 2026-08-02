@@ -2,6 +2,10 @@
 
 [![CI](https://github.com/michael-bellido/property-ai-rag/actions/workflows/ci.yml/badge.svg)](https://github.com/michael-bellido/property-ai-rag/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Try it live](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://property-ai-sunset.streamlit.app)
+
+**🚀 [Try the live demo](https://property-ai-sunset.streamlit.app)** — no
+installation needed, hosted free on Streamlit Community Cloud.
 
 A Retrieval-Augmented Generation (RAG) chatbot that answers questions about
 property listings and agency policies by retrieving relevant information
