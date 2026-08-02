@@ -17,6 +17,8 @@ relying purely on an LLM's own (often outdated or hallucinated) knowledge.
 > derived from any real client, agency, or confidential data. "Sunset Realty
 > Group" does not exist.
 
+![Property AI demo — asking about villas with a pool, then a follow-up question that reuses the conversation context](docs/demo.gif)
+
 ## Why this project
 
 Most public LLMs know nothing about a specific business's current listings,
