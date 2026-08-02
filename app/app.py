@@ -16,6 +16,7 @@ Requires a GROQ_API_KEY environment variable (see .env.example).
 """
 import html
 import inspect
+import logging
 import os
 import re
 from pathlib import Path
@@ -32,6 +33,14 @@ PERSIST_DIR = ROOT / "chroma_store"
 DATA_DIR = ROOT / "data"
 
 load_dotenv(ROOT / ".env")
+
+# Real failures (bad/expired API key, Groq rate limits, network hiccups) are
+# logged server-side with the full exception so they're visible in hosted
+# logs (e.g. Streamlit Community Cloud's log viewer) — the chat UI itself
+# only ever shows the short, friendly message built by _friendly_llm_error,
+# never a raw traceback. See handle_question().
+logger = logging.getLogger("property_ai")
+logging.basicConfig(level=logging.INFO)
 
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 LLM_MODEL = "llama-3.1-8b-instant"
@@ -74,6 +83,19 @@ UI_TEXT_BY_LANG = {
         "source_label": "Source",
         "thinking": "Thinking...",
         "loading_text": "Loading knowledge base…",
+        "llm_error_auth": (
+            "This demo's API key isn't working right now — that's a "
+            "configuration issue on my end, not something you did. Please "
+            "try again later."
+        ),
+        "llm_error_rate_limit": (
+            "This demo is getting a lot of requests right now and hit a "
+            "rate limit. Please wait a few seconds and try again."
+        ),
+        "llm_error_generic": (
+            "Something went wrong while generating a response. Please try "
+            "asking again in a moment."
+        ),
     },
     "es": {
         "app_name": "Property AI",
@@ -95,6 +117,20 @@ UI_TEXT_BY_LANG = {
         "source_label": "Fuente",
         "thinking": "Pensando...",
         "loading_text": "Cargando base de conocimiento…",
+        "llm_error_auth": (
+            "La clave de API de esta demo no está funcionando ahora mismo "
+            "— es un problema de configuración por mi parte, no algo que "
+            "hayas hecho tú. Inténtalo de nuevo más tarde."
+        ),
+        "llm_error_rate_limit": (
+            "Esta demo está recibiendo muchas solicitudes ahora mismo y se "
+            "alcanzó un límite de uso. Espera unos segundos e inténtalo de "
+            "nuevo."
+        ),
+        "llm_error_generic": (
+            "Algo salió mal al generar la respuesta. Inténtalo de nuevo en "
+            "un momento."
+        ),
     },
 }
 
@@ -660,6 +696,21 @@ def get_llm():
     return ChatGroq(model=LLM_MODEL, api_key=api_key, temperature=0.2)
 
 
+def _friendly_llm_error(error: Exception) -> str:
+    """Turn a raw Groq/LLM exception into a short, user-facing message
+    instead of letting a stack trace reach the chat UI. Matches on the
+    exception's own text rather than importing groq's exception classes
+    directly, so this keeps working even if the underlying HTTP client
+    library's class names change. The real exception is always logged
+    server-side by the caller — this only controls what the visitor sees."""
+    text = str(error).lower()
+    if "401" in text or "invalid_api_key" in text or "authentication" in text:
+        return t("llm_error_auth")
+    if "429" in text or "rate_limit" in text or "rate limit" in text:
+        return t("llm_error_rate_limit")
+    return t("llm_error_generic")
+
+
 def _build_sources(docs) -> list[dict]:
     """Turn retrieved Chroma documents into the small dicts the sources
     popover renders (title / url / excerpt). These are demo listings with
@@ -952,8 +1003,16 @@ def handle_question(prompt, vector_store, llm):
                 ("human", prompt),
             ]
             with st.spinner(t("thinking")):
-                response = llm.invoke(messages)
-            answer = response.content
+                try:
+                    response = llm.invoke(messages)
+                    answer = response.content
+                except Exception as e:
+                    # Never let a raw API exception (bad/expired key, Groq
+                    # rate limit, network hiccup) reach the chat UI as a
+                    # stack trace — log the real error server-side and show
+                    # the visitor a short, friendly message instead.
+                    logger.exception("LLM call failed for question: %r", prompt)
+                    answer = _friendly_llm_error(e)
 
         render_bubble(answer, "assistant")
         if sources:

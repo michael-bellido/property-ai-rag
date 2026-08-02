@@ -121,8 +121,9 @@ never baked into the image.
 Unit tests cover the parts of the pipeline that don't require an LLM call
 or a downloaded embedding model — the EN/ES question-language heuristic,
 the conversation-memory helpers (follow-up condensation, history bounding),
-source-citation formatting, and the ingestion pipeline's document-building
-functions. They run in a couple of seconds and need no `GROQ_API_KEY`.
+source-citation formatting, the friendly-error mapping used when a Groq
+call fails, and the ingestion pipeline's document-building functions. They
+run in a couple of seconds and need no `GROQ_API_KEY`.
 
 ```bash
 pip install -r requirements-dev.txt
@@ -235,7 +236,8 @@ property-ai-rag/
 │   ├── test_ingest.py
 │   ├── test_language_detection.py
 │   ├── test_conversation_memory.py
-│   └── test_sources.py
+│   ├── test_sources.py
+│   └── test_error_handling.py
 ├── Dockerfile
 ├── .dockerignore
 ├── eval_results.md         # latest `python app/eval.py` report
