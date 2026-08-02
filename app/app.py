@@ -53,6 +53,15 @@ REPO_URL = "https://github.com/michael-bellido/property-ai-rag"
 # grounding instructions the longer a conversation runs.
 MAX_HISTORY_TURNS = 3
 
+# Maximum questions a single browser session can ask this demo. This public
+# demo shares one free-tier Groq API key across every visitor, so this caps
+# how much of that shared quota any one session can consume — past the
+# limit, the app stops calling the LLM and shows a friendly message
+# instead. It resets the moment someone reloads into a new session, so
+# it's a courtesy limit, not a security control. See
+# _has_reached_session_limit() / handle_question().
+QUESTION_LIMIT_PER_SESSION = 20
+
 # =========================================================
 # BILINGUAL UI TEXT (EN default / ES) — single source of truth for every
 # static string in the interface, so a stray mixed-language string can't
@@ -96,6 +105,11 @@ UI_TEXT_BY_LANG = {
             "Something went wrong while generating a response. Please try "
             "asking again in a moment."
         ),
+        "session_limit_message": (
+            "You've reached this demo's limit of {limit} questions per "
+            "session — thanks for trying it out! Reload the page to start "
+            "a new session."
+        ),
     },
     "es": {
         "app_name": "Property AI",
@@ -130,6 +144,11 @@ UI_TEXT_BY_LANG = {
         "llm_error_generic": (
             "Algo salió mal al generar la respuesta. Inténtalo de nuevo en "
             "un momento."
+        ),
+        "session_limit_message": (
+            "Has alcanzado el límite de {limit} preguntas por sesión de "
+            "esta demo — ¡gracias por probarla! Recarga la página para "
+            "empezar una nueva sesión."
         ),
     },
 }
@@ -711,6 +730,15 @@ def _friendly_llm_error(error: Exception) -> str:
     return t("llm_error_generic")
 
 
+def _has_reached_session_limit(
+    questions_asked: int, limit: int = QUESTION_LIMIT_PER_SESSION
+) -> bool:
+    """Pure predicate behind the per-session question cap — takes a plain
+    count instead of touching st.session_state directly so it's trivially
+    unit-testable."""
+    return questions_asked >= limit
+
+
 def _build_sources(docs) -> list[dict]:
     """Turn retrieved Chroma documents into the small dicts the sources
     popover renders (title / url / excerpt). These are demo listings with
@@ -968,6 +996,20 @@ def render_bubble(text: str, role: str = "assistant"):
 
 
 def handle_question(prompt, vector_store, llm):
+    # Per-session question cap check FIRST, before any retrieval or LLM
+    # work — a blocked question shouldn't cost an embedding call either.
+    # Shown as a toast (not a chat bubble) and never written to
+    # session_state.messages, so it doesn't linger in the conversation or
+    # get replayed to the LLM as fake history on a later question.
+    questions_asked = st.session_state.get("questions_asked", 0)
+    if _has_reached_session_limit(questions_asked):
+        st.toast(
+            t("session_limit_message").format(limit=QUESTION_LIMIT_PER_SESSION),
+            icon="🚦",
+        )
+        return
+    st.session_state.questions_asked = questions_asked + 1
+
     # Snapshot prior turns BEFORE appending the current question, so the
     # conversation-memory helpers below see only what was already
     # discussed, not this new question appearing twice.

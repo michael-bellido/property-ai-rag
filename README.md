@@ -128,8 +128,9 @@ Unit tests cover the parts of the pipeline that don't require an LLM call
 or a downloaded embedding model — the EN/ES question-language heuristic,
 the conversation-memory helpers (follow-up condensation, history bounding),
 source-citation formatting, the friendly-error mapping used when a Groq
-call fails, and the ingestion pipeline's document-building functions. They
-run in a couple of seconds and need no `GROQ_API_KEY`.
+call fails, the per-session question-limit predicate, and the ingestion
+pipeline's document-building functions. They run in a couple of seconds
+and need no `GROQ_API_KEY`.
 
 ```bash
 pip install -r requirements-dev.txt
@@ -220,6 +221,16 @@ possible answer:
   anything in the user's message or retrieved context — see "Evaluation"
   above. This is the actual value of an adversarial test set: it finds the
   failure before a user (or a recruiter) does.
+- **A per-session question cap, deliberately not a global rate limiter.**
+  This demo shares one free-tier Groq API key across every visitor, so
+  `handle_question` in `app.py` caps a single session at
+  `QUESTION_LIMIT_PER_SESSION` (20) questions before it stops calling the
+  LLM. It resets the moment someone opens a new tab, so it's not a
+  security control — it's a courtesy limit sized for the realistic
+  failure mode (one session consuming a disproportionate share of the
+  shared quota), not an adversary. A real global cap would need shared
+  state across sessions (e.g. a small external store), which is more
+  than this demo's traffic justifies.
 
 ## Project structure
 
@@ -243,7 +254,8 @@ property-ai-rag/
 │   ├── test_language_detection.py
 │   ├── test_conversation_memory.py
 │   ├── test_sources.py
-│   └── test_error_handling.py
+│   ├── test_error_handling.py
+│   └── test_session_limit.py
 ├── Dockerfile
 ├── .dockerignore
 ├── eval_results.md         # latest `python app/eval.py` report
