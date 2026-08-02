@@ -1,0 +1,21 @@
+# Local/dev artifacts that shouldn't be copied into the image — the image
+# builds its own chroma_store/ via `RUN python app/ingest.py` and its own
+# venv-equivalent via pip install, so shipping the host's copies would
+# either bloat the image or bake in the wrong platform's binaries.
+venv/
+.venv/
+.venv-new/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+chroma_store/
+.git/
+.github/
+.env
+tests/
+requirements-dev.txt
+pytest.ini
+pyproject.toml
+eval_results.md
+.DS_Store
